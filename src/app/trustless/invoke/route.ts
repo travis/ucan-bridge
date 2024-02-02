@@ -3,14 +3,9 @@ import { create as createW3UPClient } from '@web3-storage/w3up-client'
 import * as Store from '@web3-storage/capabilities/store'
 import * as Upload from '@web3-storage/capabilities/upload'
 import { base64pad } from 'multiformats/bases/base64'
-import { CID } from 'multiformats/cid'
-import { identity } from 'multiformats/hashes/identity'
-import * as Signer from '@ucanto/principal/ed25519'
 import * as Ucanto from '@ucanto/interface'
 import { createServiceConf } from '../../service'
 import { StoreMemory } from "@web3-storage/w3up-client/stores"
-import { CarReader } from '@ipld/car/reader'
-import { importDAG } from '@ucanto/core/delegation'
 import * as Delegation from '@ucanto/core/delegation'
 import { sha256 } from '@ucanto/core'
 import { ed25519 } from '@ucanto/principal'
@@ -19,16 +14,6 @@ const abilityNameToAbility: Record<string, Ucanto.TheCapabilityParser<any>> = {
   'store/add': Store.add,
   'upload/add': Upload.add,
   'upload/list': Upload.list
-}
-
-export async function readProofFromBytes (bytes: Uint8Array) {
-  const blocks = []
-  const reader = await CarReader.fromBytes(bytes)
-  for await (const block of reader.blocks()) {
-    blocks.push(block)
-  }
-  // @ts-expect-error
-  return importDAG(blocks)
 }
 
 const deriveSigner = async (password: string) => {

@@ -20,7 +20,7 @@ const abilityNameToAbility: Record<string, Ucanto.TheCapabilityParser<any>> = {
   'upload/list': Upload.list
 }
 
-export async function readProofFromBytes (bytes: Uint8Array) {
+async function readProofFromBytes (bytes: Uint8Array) {
   const blocks = []
   const reader = await CarReader.fromBytes(bytes)
   for await (const block of reader.blocks()) {
