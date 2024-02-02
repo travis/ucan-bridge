@@ -2,17 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { create as createW3UPClient } from '@web3-storage/w3up-client'
 import * as Store from '@web3-storage/capabilities/store'
 import * as Upload from '@web3-storage/capabilities/upload'
-import { base64 } from 'multiformats/bases/base64'
+import { base64pad } from 'multiformats/bases/base64'
 import { CID } from 'multiformats/cid'
 import { identity } from 'multiformats/hashes/identity'
 import * as Signer from '@ucanto/principal/ed25519'
 import * as Ucanto from '@ucanto/interface'
-import { createServiceConf } from '../service'
+import { createServiceConf } from '../../service'
 import { StoreMemory } from "@web3-storage/w3up-client/stores"
 import { CarReader } from '@ipld/car/reader'
 import { importDAG } from '@ucanto/core/delegation'
-
-const bridgePrincipalPrivateKey = process.env.BRIDGE_PRINCIPAL_PRIVATE_KEY
+import * as Delegation from '@ucanto/core/delegation'
+import { sha256 } from '@ucanto/core'
+import { ed25519 } from '@ucanto/principal'
 
 const abilityNameToAbility: Record<string, Ucanto.TheCapabilityParser<any>> = {
   'store/add': Store.add,
@@ -30,14 +31,13 @@ export async function readProofFromBytes (bytes: Uint8Array) {
   return importDAG(blocks)
 }
 
+const deriveSigner = async (password: string) => {
+  const { digest } = await sha256.digest(new TextEncoder().encode(password))
+  return await ed25519.Signer.derive(digest)
+}
+
 export async function POST (request: NextRequest) {
   try {
-    if (!bridgePrincipalPrivateKey) {
-      return new NextResponse(
-        'BRIDGE_PRINCIPAL_PRIVATE_KEY environment variable is not set',
-        { status: 500 })
-    }
-
     const query = await request.formData()
 
     // get capability to be invoked
@@ -65,6 +65,13 @@ export async function POST (request: NextRequest) {
     // get inputs (the "nb" field of the invocation)
     const inputs = JSON.parse(query.get('inputs') as string ?? '{}')
 
+    // get secret from Secret header
+    const secretHeader = request.headers.get('Secret')
+    if (!secretHeader) {
+      return new NextResponse(
+        `Secret header is not set - please set it to your secret`,
+        { status: 400 })
+    }
     // get delegation from Authorization header
     const authHeader = request.headers.get('Authorization')
     if (!authHeader) {
@@ -72,24 +79,17 @@ export async function POST (request: NextRequest) {
         `Authorization header is not set - please set it to a base64 encoded Delegation`,
         { status: 400 })
     }
-    const cid = CID.parse(authHeader, base64)
-    if (cid.multihash.code !== identity.code) {
+    const delegationResult = await Delegation.extract(base64pad.decode(authHeader))
+    if (delegationResult.error) {
       return new NextResponse(
-        `could not extract delegation from Authorization header`,
+        `could not extract delegation from Authorization header: ${delegationResult.error.message}`,
         { status: 400 }
       )
     }
-    const delegation = await readProofFromBytes(cid.multihash.digest)
-    if (!delegation) {
-      return new NextResponse(
-        `could not extract delegation from Authorization header`,
-        { status: 400 }
-      )
-    }
-
+    const delegation = delegationResult.ok
     // create the client and add the delegation to it
     const client = await createW3UPClient({
-      principal: Signer.parse(bridgePrincipalPrivateKey),
+      principal: await deriveSigner(secretHeader),
       store: new StoreMemory(),
       serviceConf: createServiceConf({})
     })
